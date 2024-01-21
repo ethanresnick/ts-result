@@ -1,0 +1,30 @@
+{
+  "name": "ts-async-result",
+  "type": "module",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node --test ./dist",
+    "test:only": "npm run build && node --test --test-only ./dist"
+  },
+  "author": "Ethan Resnick <ethan.resnick@gmail.com> (https://ethanresnick.com)",
+  "license": "ISC",
+  "keywords": [
+    "Result",
+    "TypeScript",
+    "TS",
+    "Ok",
+    "Err",
+    "Typed Errors",
+    "Error Handling"
+  ],
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "typescript": "^5.3.3"
+  }
+}
