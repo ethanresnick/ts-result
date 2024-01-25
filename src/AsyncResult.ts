@@ -31,6 +31,13 @@ class _AsyncResult<T, E> {
     return this.resultPromise.then((result) => result.valueOrThrow());
   }
 
+  then<V>(
+    _onfulfilled?: ((value: Result<T, E>) => V) | null | undefined,
+    _onrejected?: ((reason: any) => unknown) | null | undefined
+  ) {
+    return this.resultPromise.then(...arguments);
+  }
+
   then_<T2, E2 = never>(
     okCb: (arg: T) => ResultPromisable<T2, E2>,
     errCb?: (arg: ErrorHolder<E>) => ResultPromisable<T2, E2>

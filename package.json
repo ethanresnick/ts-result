@@ -1,13 +1,14 @@
 {
   "name": "ts-async-result",
   "type": "module",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "",
   "main": "dist/index.js",
   "exports": {
     ".": "./dist/index.js"
   },
   "scripts": {
+    "prepublishOnly": "npm run build",
     "build": "tsc",
     "test": "npm run build && node --test ./dist",
     "test:only": "npm run build && node --test --test-only ./dist"
