@@ -394,7 +394,7 @@ describe("AsyncResult", () => {
         .valueOrFallback((it) => it);
 
       const result2 = await AsyncResult<never, CustomError>(
-        Promise.resolve(ErrUnchecked(new Error()))
+        ErrUnchecked(new Error())
       )
         .catchKnownInstanceOf(CustomError, fallbackFn)
         .valueOrFallback((it) => it);
@@ -433,15 +433,9 @@ describe("AsyncResult", () => {
     it("should always call the callback function and return an equivalent result if it doesn't produce an error", async () => {
       const err = new CustomError("hello");
       const initialResults = [
-        [AsyncResult<number, unknown>(Promise.resolve(42)), 42],
-        [
-          AsyncResult<number, unknown>(Promise.resolve(Err(err))),
-          makeCheckedErrorHolder(err),
-        ],
-        [
-          AsyncResult<number, unknown>(Promise.reject(err)),
-          makeUncheckedErrorHolder(err),
-        ],
+        [AsyncResult(Promise.resolve(42)), 42],
+        [AsyncResult(Promise.resolve(Err(err))), makeCheckedErrorHolder(err)],
+        [AsyncResult(Promise.reject(err)), makeUncheckedErrorHolder(err)],
       ] as const;
 
       const finallyNonErrorReturnValues = [
@@ -471,9 +465,9 @@ describe("AsyncResult", () => {
       const initialErr = new CustomError("hello");
       const finalError = new CustomError("Another Error");
       const initialResults = [
-        AsyncResult<number, unknown>(Promise.resolve(42)),
-        AsyncResult<number, unknown>(Promise.resolve(Err(initialErr))),
-        AsyncResult<number, unknown>(Promise.reject(initialErr)),
+        AsyncResult(Promise.resolve(42)),
+        AsyncResult(Promise.resolve(Err(initialErr))),
+        AsyncResult(Promise.reject(initialErr)),
       ] as const;
 
       const finallyErrorReturnValues = [
@@ -556,8 +550,8 @@ describe("AsyncResult", () => {
     it("should return an Ok with the first Ok value to resolve if any result is Ok", async () => {
       const result = await AsyncResult.any([
         AsyncResult(Promise.reject(new Error(""))),
-        AsyncResult(setTimeout(100).then((_) => 100)),
-        AsyncResult(setTimeout(30).then((_) => 3)),
+        AsyncResult(setTimeout(100).then((_) => Ok(100))),
+        AsyncResult(setTimeout(30).then((_) => Ok(3))),
       ]).valueOrThrow();
 
       // Even though the second result is earlier in the list, the third
@@ -569,7 +563,7 @@ describe("AsyncResult", () => {
       const error = new Error("Something went wrong");
       const result = await AsyncResult.any([
         AsyncResult(Promise.resolve(Err(error))),
-        AsyncResult<never, never>(Promise.reject(error)),
+        AsyncResult(Promise.reject<never>(error)),
       ]).valueOrFallback((it) => it);
 
       const expectedErrors = [

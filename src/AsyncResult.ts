@@ -376,19 +376,21 @@ function c(...fns: NonEmptyArray<(v: any) => ResultPromisable<any, any>>) {
 
 // NB: The order of items in this union effects type inference!
 // Leave the more specific ones first.
-type ResultPromisable<T, E> =
-  | Promise<T | Result<T, E> | AsyncResult<T, E>>
-  | Promise<Result<T, E> | AsyncResult<T, E>>
-  | Promise<T | AsyncResult<T, E>>
-  | Promise<T | Result<T, E>>
-  | Promise<AsyncResult<T, E>>
-  | Promise<Result<T, E>>
-  | Promise<T>
+type ResultPromisable<T, E = never> =
+  | Promise<
+      | T
+      | Result<T, E>
+      | AsyncResult<T, E>
+      | AsyncResult<never, E>
+      | Result<never, E>
+    >
   | AsyncResult<T, E>
   | Result<T, E>
+  | AsyncResult<never, E>
+  | Result<never, E>
   | T;
 
-async function toResultPromise<T, E>(
+async function toResultPromise<T, E = never>(
   it: ResultPromisable<T, E>
 ): Promise<Result<T, E>> {
   const awaited = await it;
