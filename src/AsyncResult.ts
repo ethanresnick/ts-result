@@ -93,7 +93,7 @@ class _AsyncResult<T, E> {
    * structurally identical, but that's TS.
    */
   catchKnownInstanceOf<ToCatch extends E, T2, E2 = never>(
-    type: { new (): UnionToIntersection<ToCatch> },
+    type: { new (...args: any[]): UnionToIntersection<ToCatch> },
     cb: (arg: ToCatch) => T2 | Result<T2, E2>
   ): AsyncResult<T | T2, Exclude<E, ToCatch> | E2> {
     return this.catch_<T | T2, E2 | Exclude<E, ToCatch>>((error) => {
@@ -126,10 +126,10 @@ class _AsyncResult<T, E> {
 }
 
 export function AsyncResult<T, E = never>(
-  arg: Promise<T | Result<T, E> | AsyncResult<T, E>>
+  arg: ResultPromisable<T, E>
 ): _AsyncResult<T, E> {
   return new _AsyncResult(
-    toResultPromise<T, E>(arg).catch((error) => ErrUnchecked<E>(error))
+    toResultPromise(arg).catch((error) => ErrUnchecked<E>(error))
   );
 }
 
@@ -140,9 +140,8 @@ export function AsyncResult<T, E = never>(
 // confusion is worth the convenience, and it's mitigated by making this a
 // dedicated method (that we can give a good name and docs to), rather than
 // abusing the main `AsyncResult` "constructor".
-AsyncResult.fromFunc = <T, E = never>(
-  arg: () => Promise<T | Result<T, E> | AsyncResult<T, E>>
-) => AsyncResult(arg());
+AsyncResult.fromFunc = <T, E = never>(arg: () => ResultPromisable<T, E>) =>
+  AsyncResult(arg());
 
 type AsyncOkType<T> = T extends AsyncResult<infer U, any> ? U : never;
 type AsyncErrType<T> = T extends AsyncResult<any, infer E> ? E : never;
@@ -375,17 +374,19 @@ function c(...fns: NonEmptyArray<(v: any) => ResultPromisable<any, any>>) {
   };
 }
 
+// NB: The order of items in this union effects type inference!
+// Leave the more specific ones first.
 type ResultPromisable<T, E> =
-  | T
-  | Promise<T>
-  | Result<T, E>
-  | Promise<Result<T, E>>
-  | AsyncResult<T, E>
-  | Promise<AsyncResult<T, E>>
-  | Promise<T | Result<T, E>>
-  | Promise<T | AsyncResult<T, E>>
+  | Promise<T | Result<T, E> | AsyncResult<T, E>>
   | Promise<Result<T, E> | AsyncResult<T, E>>
-  | Promise<T | Result<T, E> | AsyncResult<T, E>>;
+  | Promise<T | AsyncResult<T, E>>
+  | Promise<T | Result<T, E>>
+  | Promise<AsyncResult<T, E>>
+  | Promise<Result<T, E>>
+  | Promise<T>
+  | AsyncResult<T, E>
+  | Result<T, E>
+  | T;
 
 async function toResultPromise<T, E>(
   it: ResultPromisable<T, E>

@@ -106,13 +106,13 @@ describe("AsyncResult", () => {
 
     it("should throw an error if the result is a checked Err", async () => {
       const error = new Error("Something went wrong");
-      const result = AsyncResult(Promise.resolve(Err(error)));
+      const result = AsyncResult(Err(error));
       assert.rejects(() => result.valueOrThrow(), error);
     });
 
     it("should throw an error if the result is an unchecked Err", async () => {
       const error = new Error("Something went wrong");
-      const result = AsyncResult(Promise.resolve(Ok(34))).then_((_it) => {
+      const result = AsyncResult(Ok(34)).then_((_it) => {
         throw error;
       });
       assert.rejects(() => result.valueOrThrow(), error);
@@ -137,9 +137,7 @@ describe("AsyncResult", () => {
     });
 
     it("if the result is Ok, should work as map() and return a new Result with the mapped value", async () => {
-      const mappedResult = AsyncResult(Promise.resolve(Ok(42))).then_(
-        (value) => value * 2
-      );
+      const mappedResult = AsyncResult(42).then_((value) => value * 2);
       assert.deepEqual(await mappedResult.valueOrThrow(), 84);
     });
 
@@ -637,11 +635,11 @@ describe("AsyncResult", () => {
       const composed2 = AsyncResult.compose(fn2, fn3, fn1);
 
       assert.deepStrictEqual(
-        await AsyncResult(Promise.resolve(2)).then_(composed).valueOrThrow(),
+        await AsyncResult(2).then_(composed).valueOrThrow(),
         10
       );
       assert.deepStrictEqual(
-        await AsyncResult(Promise.resolve("Hello!"))
+        await AsyncResult("Hello!")
           .then_(composed2)
           .valueOrFallback((it) => it),
         makeCheckedErrorHolder(new CustomError())
@@ -674,9 +672,7 @@ describe("AsyncResult", () => {
       const result3 = await AsyncResult.run(function* () {
         try {
           const x = yield* Ok("42");
-          const y = yield* AsyncResult(
-            Promise.resolve(Err(new CustomError("Failed")))
-          );
+          const y = yield* AsyncResult(Err(new CustomError("Failed")));
           return x + y;
         } catch (e) {
           // this should never run, because yielding an Err isn't throwing, it
