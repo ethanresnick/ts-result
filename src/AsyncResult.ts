@@ -1,12 +1,4 @@
-import { makeCheckedErrorHolder, type ErrorHolder } from "./ErrorHolder.js";
-import {
-  Err,
-  ErrUnchecked,
-  Ok,
-  _Result,
-  isResult,
-  type Result,
-} from "./Result.js";
+import { Err, Ok, _Result, isResult, type Result } from "./Result.js";
 import type { NonEmptyArray, UnionToIntersection } from "./utils.js";
 
 export type AsyncResult<T, E> = _AsyncResult<T, E>;
@@ -21,13 +13,17 @@ class _AsyncResult<T, E> {
     return yield this;
   }
 
-  async valueOrFallback<U>(getFallback: (e: ErrorHolder<E>) => U) {
-    return this.resultPromise.then((result) =>
-      result.valueOrFallback(getFallback)
+  async valueOrFallback<U>(
+    errCb: (e: E) => U,
+    rejectionCb?: (arg: unknown) => U
+  ) {
+    return this.resultPromise.then(
+      (result) => result.valueOrFallback(errCb),
+      rejectionCb
     );
   }
 
-  async valueOrThrow() {
+  async valueOrReject() {
     return this.resultPromise.then((result) => result.valueOrThrow());
   }
 
@@ -40,48 +36,52 @@ class _AsyncResult<T, E> {
 
   then_<T2, E2 = never>(
     okCb: (arg: T) => ResultPromisable<T2, E2>,
-    errCb?: (arg: ErrorHolder<E>) => ResultPromisable<T2, E2>
+    errCb?: (arg: E) => ResultPromisable<T2, E2>,
+    rejectionCb?: (arg: unknown) => ResultPromisable<T2, E2>
   ): _AsyncResult<T2, E | E2> {
     return new _AsyncResult<T2, E | E2>(
-      this.resultPromise
-        .then(async (result) =>
+      this.resultPromise.then(
+        (result) =>
           !result.data.isOk
             ? typeof errCb === "function"
               ? toResultPromise(errCb(result.data.value))
-              : (result satisfies Result<T, E> as Result<never, E>)
-            : toResultPromise(okCb(result.data.value))
-        )
-        .catch((error) => ErrUnchecked<E | E2>(error))
+              : (result satisfies Result<T, E> as unknown as Result<T2, E | E2>)
+            : toResultPromise(okCb(result.data.value)),
+        (error) => {
+          if (typeof rejectionCb === "function") {
+            return toResultPromise(rejectionCb(error));
+          } else {
+            throw error;
+          }
+        }
+      )
     );
   }
 
   catch_<T2, E2 = never>(
-    cb: (arg: ErrorHolder<E>) => ResultPromisable<T2, E2>
+    errCb: (arg: E) => ResultPromisable<T2, E2>,
+    rejectionCb?: (arg: unknown) => ResultPromisable<T2, E2>
   ): _AsyncResult<T | T2, E2> {
     return new _AsyncResult<T | T2, E2>(
-      this.resultPromise
-        .then(async (result) =>
+      this.resultPromise.then(
+        (result) =>
           result.data.isOk
-            ? (result satisfies Result<T, E> as Result<T, never>)
-            : toResultPromise(cb(result.data.value))
-        )
-        .catch((error) => ErrUnchecked<E2>(error))
+            ? (result satisfies Result<T, E> as unknown as Result<T | T2, E2>)
+            : toResultPromise(errCb(result.data.value)),
+        (error) => {
+          if (typeof rejectionCb !== "function") {
+            throw error;
+          }
+          return toResultPromise(rejectionCb(error));
+        }
+      )
     );
   }
 
-  catchKnown<T2, E2 = never>(
-    cb: (arg: E) => ResultPromisable<T2, E2>
-  ): _AsyncResult<T | T2, E2> {
-    return this.catch_((error) => {
-      return error.type === "UNCHECKED_ERROR"
-        ? new _Result<never, E2>({ isOk: false, value: error })
-        : cb(error.error);
-    });
-  }
-
   /**
-   * Like `catchKnown`, but the callback is only called if the error is an
-   * instance of the given class.
+   * Like `catch_`, but the callback is only called if the error is an Err
+   * that's an instance of the given class. If the AsyncResult is already
+   * rejected, the rejection callback is called unconditionally.
    *
    * NB: We use `UnionToIntersection` to help ensure (but not guarantee) that
    * `ToCatch` is instantiated with a single class's type, not a union type. If
@@ -92,25 +92,26 @@ class _AsyncResult<T, E> {
    * Note that this isn't perfect when two potential error classes are
    * structurally identical, but that's TS.
    */
-  catchKnownInstanceOf<ToCatch extends E, T2, E2 = never>(
+  catchInstanceOf<ToCatch extends E, T2, E2 = never>(
     type: { new (...args: any[]): UnionToIntersection<ToCatch> },
-    cb: (arg: ToCatch) => T2 | Result<T2, E2>
+    errCb: (arg: ToCatch) => ResultPromisable<T2, E2>,
+    rejectionCb?: (arg: unknown) => ResultPromisable<T2, E2>
   ): AsyncResult<T | T2, Exclude<E, ToCatch> | E2> {
     return this.catch_<T | T2, E2 | Exclude<E, ToCatch>>((error) => {
-      return error.type === "CHECKED_ERROR" && error.error instanceof type
-        ? cb(error.error)
+      return error instanceof type
+        ? errCb(error)
         : new _Result<T, Exclude<E, ToCatch>>({
             isOk: false,
-            value: error as ErrorHolder<Exclude<E, ToCatch>>,
+            value: error satisfies E as Exclude<E, ToCatch>,
           });
-    });
+    }, rejectionCb);
   }
 
   /**
    * Follows Promise.prototype.finally(), in that the callback is called
    * regardless of whether the Result is an Ok or an Err; but, the returned
    * result has the same result as the original, regardless of what the callback
-   * returned, unless the callbac returns a new Err or throws.
+   * returned, unless the callback returns a new Err or throws.
    */
   finally_<E2 = never>(
     cb: () => void | ResultPromisable<never, E2>
@@ -119,18 +120,16 @@ class _AsyncResult<T, E> {
       const newResult = await toResultPromise<unknown, E2>(cb());
       return !newResult.data.isOk
         ? (newResult satisfies Result<unknown, E2> as Result<never, E2>)
-        : this.resultPromise;
+        : Promise.resolve(this.resultPromise);
     };
-    return this.then_<T, E | E2>(fn, fn);
+    return this.then_<T, E | E2>(fn, fn, fn);
   }
 }
 
 export function AsyncResult<T, E = never>(
   arg: ResultPromisable<T, E>
 ): _AsyncResult<T, E> {
-  return new _AsyncResult(
-    toResultPromise(arg).catch((error) => ErrUnchecked<E>(error))
-  );
+  return new _AsyncResult(toResultPromise(arg));
 }
 
 // NB: allowing arg to be a function is potentially misleading -- the caller
@@ -160,44 +159,56 @@ type AsyncResultTypes<T extends AsyncResult<any, any>[]> = {
     : never;
 };
 
-AsyncResult.all = <T extends AsyncResult<any, any>[]>(
+/**
+ * Returns an AsyncResult that resolves with an array of the results of the
+ * given AsyncResults, if all were successful. If any of the AsyncResults
+ * rejected, the returned AsyncResult is in a rejected state with the first
+ * rejection. If there were no rejections but one or more AsyncResults were
+ * Errs, the AsyncResult is an AsyncResult holding the first Err.
+ */
+AsyncResult.all = <T extends [] | AsyncResult<any, any>[]>(
   asyncResults: T
 ): AsyncResult<AsyncOkTypes<T>, AsyncErrTypes<T>[number]> => {
-  return AsyncResult<any, any>(
-    Promise.all(asyncResults.map((it) => getValueOrRejectWithErrorHolder(it)))
-      .then((resultValues) => Ok(resultValues as AsyncOkTypes<T>))
-      .catch((error) => {
-        const error_ = error as ErrorHolder<AsyncErrTypes<T>[number]>;
-
-        return error_.type === "UNCHECKED_ERROR"
-          ? ErrUnchecked(error_.error)
-          : Err(error_.error as AsyncErrTypes<T>[number] & Error);
-      })
-  );
-};
-
-AsyncResult.any = <T extends [] | AsyncResult<any, any>[]>(
-  asyncResults: T
-): AsyncResult<
-  AsyncOkTypes<T>[number],
-  AggregateError & { errors: ErrorHolder<AsyncErrTypes<T>[number]>[] }
-> => {
-  return AsyncResult<any, any>(
-    Promise.any(asyncResults.map((it) => getValueOrRejectWithErrorHolder(it)))
-      .then((resultValue) => Ok(resultValue as AsyncOkTypes<T>[number]))
-      .catch((error) => Err(error as AggregateError))
+  return AsyncResult(
+    Promise.all(asyncResults.map((it) => it.resultPromise)).then(
+      (resultValues) => {
+        // nothing rejected, but we still might have some Errs.
+        const firstError = resultValues.find((it) => !it.data.isOk);
+        if (firstError) {
+          return Err(firstError.data.value);
+        }
+        return Ok(
+          resultValues.map((it) => it.data.value) as unknown as AsyncOkTypes<T>
+        );
+      }
+    )
   );
 };
 
 AsyncResult.allSettled = <T extends [] | AsyncResult<any, any>[]>(
   asyncResults: T
-): AsyncResult<AsyncResultTypes<T>, never> => {
+): AsyncResult<
+  {
+    [K in keyof T]:
+      | { type: "ok"; value: AsyncOkType<T[K]> }
+      | { type: "err"; value: AsyncErrType<T[K]> }
+      | { type: "rejection"; value: unknown };
+  },
+  never
+> => {
   return AsyncResult<any, never>(
     Promise.allSettled(asyncResults.map((it) => it.resultPromise)).then(
       (settledResults) =>
         // NB: resultPromise is supposed to never reject (instead, there should
         // be an error inside the Result), so we can safely cast here.
-        settledResults.map((it) => (it as PromiseFulfilledResult<any>).value)
+        settledResults.map((it) =>
+          it.status === "fulfilled"
+            ? {
+                type: it.value.data.isOk ? "ok" : "err",
+                value: it.value.data.value,
+              }
+            : { type: "rejection", value: it.reason }
+        )
     )
   );
 };
@@ -254,22 +265,23 @@ AsyncResult.run = <Yields extends AsyncResult<any, any> | Result<any, any>, U>(
         async function andThen(
           v
         ): Promise<AsyncResult<any, any> | Result<any, any>> {
-          try {
-            const { value, done } = gen.next(v);
-            const result = await toResultPromise(value);
-            if (done) {
-              return result;
-            }
+          const { value, done } = gen.next(v);
 
-            if (!result.data.isOk) {
-              gen.return?.(value as any);
-              return result;
-            }
-
-            return AsyncResult(Promise.resolve(result)).then_(andThen);
-          } catch (error) {
-            return ErrUnchecked(error);
+          if (done) {
+            return toResultPromise(value);
           }
+
+          return AsyncResult(toResultPromise(value)).then_(
+            (value) => andThen(value),
+            (err) =>
+              AsyncResult(Err(err)).finally_(() => {
+                return gen.return?.(err as any) as any;
+              }),
+            (err) =>
+              AsyncResult(Promise.reject(err)).finally_(() => {
+                return gen.return?.(err as any) as any;
+              })
+          );
         }
       );
     })()
@@ -401,32 +413,4 @@ async function toResultPromise<T, E = never>(
   } else {
     return Ok(awaited);
   }
-}
-
-/**
- * Given an AsyncResult<T, E>, a Promise that resolves with T or reqjects with
- * an ErrorHolder<E>. This is different from AsyncResult.valueOrThrow() in that
- * it will reject with an ErrorHolder<E> instead of an `E`, allowing the caller
- * to see if the error came from a checked or unchecked exception.
- *
- * This isn't a stndard method on AsyncResult because it's generally not good to
- * reject with non-Error values, but it's used as an internal helper to
- * implement various combinators above.
- */
-async function getValueOrRejectWithErrorHolder<T, E>(
-  it: AsyncResult<T, E>
-): Promise<T> {
-  return it
-    .catch_(
-      (errorHolder) =>
-        // Return a new Err() case that wraps the given ErrorHolder in another
-        // ErrorHolder. It doesn't actually matter if this outer ErrorHolder is
-        // checked or unchecked, since it'll be thrown away by valueOrThrow() to
-        // reveal the inner ErrorHolder.
-        new _Result<never, ErrorHolder<any>>({
-          isOk: false,
-          value: makeCheckedErrorHolder(errorHolder),
-        })
-    )
-    .valueOrThrow();
 }

@@ -1,19 +1,11 @@
-import {
-  makeCheckedErrorHolder,
-  makeUncheckedErrorHolder,
-  type ErrorHolder,
-} from "./ErrorHolder.js";
 import type { NonEmptyArray, UnionToIntersection } from "./utils.js";
 
 /**
- * @fileoverview This file defines a `Result` type, which can be used to
- * eliminate the possibility of unexpected, uncaught exceptions that could crash
- * your process. Specifically, instead of throwing an exception, code can return
- * a Result value. `Result` uses a type parameter to track the type of the
- * success value _and_ one to track the type of any error values. This makes TS
- * aware of the possibility of an error (whereas normal exceptions and promise
- * rejectsions are totally invivisble to/unchecked by TS), and forces the caller
- * to handle it.
+ * @fileoverview This file defines a `Result` type, which can be used to make
+ * callers aware of error cases that would otherwise be untracked by the
+ * compiler. Specifically, instead of throwing an exception, code can return a
+ * Result value. `Result` uses a type parameter to track the type of the success
+ * value _and_ one to track the type of any error values.
  *
  * This Result type deviates considerably from the standard, monadic
  * implementations seen in functional languages, with three goals:
@@ -25,11 +17,7 @@ import type { NonEmptyArray, UnionToIntersection } from "./utils.js";
  *    and arguably simpler, so we follow it in `Result`. For the same reason,
  *    more esoteric functional programming methods like `bimap` are omitted.
  *
- * 2. **Adapt to the particular nature of JS/TS**. Because exceptions are so
- *    common in JS, whereas they're rare or impossible in other languages that
- *    have `Result`, the Err case has been adapted to (accurately) reflects the
- *    fact that an uncaught exception always could've occurred, even while
- *    transforming one result into another. Similarly, the type signatures of
+ * 2. **Adapt to the particular nature of JS/TS**. The type signatures of
  *    `then_` and `catch_` have been adapted (by allowing the second type
  *    parameter to vary) to take advantage of TS's fundamentally set-based type
  *    system and allow our code to be more dynamic than would be possible in the
@@ -44,9 +32,7 @@ export type Result<T, E> = _Result<T, E>;
 export type Ok<T> = Result<T, never>;
 export type Err<E> = Result<never, E>;
 
-type ResultData<T, E> =
-  | { isOk: true; value: T }
-  | { isOk: false; value: ErrorHolder<E> };
+type ResultData<T, E> = { isOk: true; value: T } | { isOk: false; value: E };
 
 /**
  * The Result type.
@@ -88,7 +74,7 @@ export class _Result<T, E> {
     return yield self;
   }
 
-  valueOrFallback<U>(getFallback: (e: ErrorHolder<E>) => U): T | U {
+  valueOrFallback<U>(getFallback: (e: E) => U): T | U {
     return this.data.isOk ? this.data.value : getFallback(this.data.value);
   }
 
@@ -96,7 +82,7 @@ export class _Result<T, E> {
     if (this.data.isOk) {
       return this.data.value;
     } else {
-      throw this.data.value.error;
+      throw this.data.value;
     }
   }
 
@@ -106,23 +92,19 @@ export class _Result<T, E> {
    *
    * If the Result is an Ok, the value in the Result is run through the first
    * callback, if any; if the Result is an Err, its error is run through the
-   * second callback or, if no callback is given, (a copy of) the existing
-   * Result is returned as-is. The callbacks can return a Result or a plain
-   * value, which will be wrapped in `Ok()`, also like Promise.prototype.then().
+   * second callback or, if no callback is given, a copy of the existing Result
+   * is returned as-is. The callbacks can return a Result or a plain value,
+   * which will be wrapped in `Ok()`, also like Promise.prototype.then().
    */
   then_<T2, E2 = never>(
     okCb: (arg: T) => T2 | Result<T2, E2>,
-    errCb?: (arg: ErrorHolder<E>) => T2 | Result<T2, E2>
+    errCb?: (arg: E) => T2 | Result<T2, E2>
   ): Result<T2, E | E2> {
-    try {
-      return this.data.isOk
-        ? toResult(okCb(this.data.value))
-        : typeof errCb === "function"
-        ? toResult(errCb(this.data.value))
-        : (this satisfies Result<T, E> as unknown as Result<T2, E>);
-    } catch (error) {
-      return ErrUnchecked<E>(error);
-    }
+    return this.data.isOk
+      ? toResult(okCb(this.data.value))
+      : typeof errCb === "function"
+      ? toResult(errCb(this.data.value))
+      : toResult(this satisfies Result<T, E> as unknown as Result<T2, E>);
   }
 
   /**
@@ -131,47 +113,24 @@ export class _Result<T, E> {
    * the existing Result (if the result is an Err) and passing it to the given
    * callback, which can return a new Result or a value to be wrapped in Ok.
    *
-   * If the current Result was Ok, the callback is not called and the existing
-   * Result is returned as-is.
+   * If the current Result was Ok, the callback is not called and a copy of the
+   * existing Result is returned as-is.
    *
    * NB: if the callback returns a non-Result value, the value will be wrapped
    * in Ok -- not an `Err`, which you might expect if `catch_` were simply
    * combining `mapErr` and `bindErr`. This, again, follows the Promise API.
    */
   catch_<T2, E2 = never>(
-    cb: (arg: ErrorHolder<E>) => T2 | Result<T2, E2>
-  ): Result<T | T2, E2> {
-    try {
-      return this.data.isOk
-        ? (this satisfies Result<T, E> as unknown as Result<T, E2>)
-        : toResult(cb(this.data.value));
-    } catch (error) {
-      return ErrUnchecked<E2>(error);
-    }
-  }
-
-  /**
-   * Like `catch_`, but the callback is only called if the error is a known
-   * error type (i.e., it was created by explicitly passing a value to `Err`,
-   * and its type is tracked in the Result's error type parameter).
-   *
-   * This makes it easy to use `catchKnown` to do exhaustive error handling on
-   * the error cases that the type system can enumerate, while then using a
-   * final `valueOrFallback()` call to handle any unexpected cases.
-   */
-  catchKnown<T2, E2 = never>(
     cb: (arg: E) => T2 | Result<T2, E2>
   ): Result<T | T2, E2> {
-    return this.catch_((error) => {
-      return error.type === "UNCHECKED_ERROR"
-        ? (this satisfies Result<T, E> as unknown as Result<never, E2>)
-        : cb(error.error);
-    });
+    return this.data.isOk
+      ? toResult(this satisfies Result<T, E> as unknown as Result<T, E2>)
+      : toResult(cb(this.data.value));
   }
 
   /**
-   * Like `catchKnown`, but the callback is only called if the error is an
-   * instance of the given class.
+   * Like `catch_`, but the callback is only called if the error is an instance
+   * of the given class.
    *
    * NB: We use `UnionToIntersection` to help ensure (but not guarantee) that
    * `ToCatch` is instantiated with a single class's type, not a union type. If
@@ -182,13 +141,13 @@ export class _Result<T, E> {
    * Note that this isn't perfect when two potential error classes are
    * structurally identical, but that's TS.
    */
-  catchKnownInstanceOf<ToCatch extends E, T2, E2 = never>(
+  catchInstanceOf<ToCatch extends E, T2, E2 = never>(
     type: { new (): UnionToIntersection<ToCatch> },
     cb: (arg: ToCatch) => T2 | Result<T2, E2>
   ): Result<T | T2, Exclude<E, ToCatch> | E2> {
     return this.catch_<T | T2, E2 | Exclude<E, ToCatch>>((error) => {
-      return error.type === "CHECKED_ERROR" && error.error instanceof type
-        ? cb(error.error)
+      return error instanceof type
+        ? cb(error)
         : (this satisfies Result<T, E> as Result<T, Exclude<E, ToCatch>>);
     });
   }
@@ -197,7 +156,7 @@ export class _Result<T, E> {
    * Follows Promise.prototype.finally(), in that the callback is called
    * regardless of whether the Result is an Ok or an Err; but, the returned
    * result has the same result as the original, regardless of what the callback
-   * returned, unless the callbac returns a new Err or throws.
+   * returned, unless the callback returns a new Err.
    */
   finally_<E2 = never>(cb: () => void | Result<never, E2>): Result<T, E | E2> {
     const fn = () => {
@@ -214,7 +173,7 @@ export function isResult(it: unknown): it is Result<unknown, unknown> {
 }
 
 function toResult<T, E = never>(it: T | Result<T, E>): Result<T, E> {
-  return isResult(it) ? it : Ok(it);
+  return isResult(it) ? new _Result<T, E>({ ...it.data }) : Ok(it);
 }
 
 export function Ok<O>(arg: O) {
@@ -222,17 +181,7 @@ export function Ok<O>(arg: O) {
 }
 
 export function Err<E extends Error>(error: E) {
-  return new _Result<never, E>({
-    isOk: false,
-    value: makeCheckedErrorHolder(error),
-  });
-}
-
-export function ErrUnchecked<E = never>(error: unknown) {
-  return new _Result<never, E>({
-    isOk: false,
-    value: makeUncheckedErrorHolder(error),
-  });
+  return new _Result<never, E>({ isOk: false, value: error });
 }
 
 type OkType<T> = T extends Result<infer U, any> ? U : never;
@@ -264,46 +213,17 @@ export const Result = {
 
   any<T extends [] | Result<any, any>[]>(
     results: T
-  ): Result<
-    OkTypes<T>[number],
-    AggregateError & { errors: ErrorHolder<ErrTypes<T>[number]>[] }
-  > {
-    const errValues: ErrorHolder<ErrTypes<T>[number]>[] = [];
+  ): Result<OkTypes<T>[number], AggregateError & { errors: ErrTypes<T>[] }> {
+    const errValues: ErrTypes<T>[] = [];
     for (const result of results) {
       if (result.data.isOk) {
         return result satisfies Result<any, any> as Ok<OkTypes<T>[number]>;
       } else {
-        errValues.push(
-          result.data.value satisfies ErrorHolder<any> as ErrorHolder<
-            ErrTypes<T>[number]
-          >
-        );
+        errValues.push(result.data.value satisfies any as ErrTypes<T>[number]);
       }
     }
 
     return Err(new AggregateError(errValues));
-  },
-
-  /**
-   * Takes a function that might throw (synchronously) and converts it to one
-   * that returns a Result.
-   */
-  wrap<Args extends [], Res>(fn: (...args: Args) => Res) {
-    return (...args: Args): Result<Res, never> => {
-      try {
-        return Ok(fn(...args));
-      } catch (e) {
-        return ErrUnchecked(e);
-      }
-    };
-  },
-
-  fromFunc<T>(fn: () => T): Result<T, never> {
-    try {
-      return toResult(fn());
-    } catch (e) {
-      return ErrUnchecked(e);
-    }
   },
 
   compose: c,
@@ -406,28 +326,21 @@ export const Result = {
 
     while (!done) {
       returnResult = returnResult.then_((v: any) => {
-        try {
-          const { value, done: done_ = false } = gen.next(v);
-          if (isResult(value) && !value.data.isOk) {
-            done = true;
-            // Let the generator do its cleanup in `finally`, since we're
-            // manually bailing early.
-            // NB: if the generator throws, we don't have to do this explicitly
-            // in the catch block below.
-            gen.return?.(value as any);
-          } else {
-            done = done_;
-          }
-          // Return the yielded `Result`. If we're not done yet, the value in
-          // this will be unpacked on the next iteration of the loop and passed
-          // back into the generator (where it'll reach the Result's interator
-          // per above and make it `return`, filling in the value of the
-          // `yield*` and continuing the generator).
-          return value as any;
-        } catch (error) {
+        const { value, done: done_ = false } = gen.next(v);
+        if (isResult(value) && !value.data.isOk) {
           done = true;
-          return ErrUnchecked(error);
+          // Let the generator do its cleanup, since we're
+          // manually bailing early.
+          gen.return?.(value as any);
+        } else {
+          done = done_;
         }
+        // Return the yielded `Result`. If we're not done yet, the value in
+        // this will be unpacked on the next iteration of the loop and passed
+        // back into the generator (where it'll reach the Result's interator
+        // per above and make it `return`, filling in the value of the
+        // `yield*` and continuing the generator).
+        return value as any;
       });
     }
     return returnResult;
