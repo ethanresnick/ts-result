@@ -124,6 +124,136 @@ class _AsyncResult<T, E> {
     };
     return this.then_<T, E | E2>(fn, fn, fn);
   }
+
+  /**
+   * Like Result.thenChain, but for AsyncResult. Chains together a sequence of async or sync callbacks, passing the history and short-circuiting on the first Err.
+   */
+  thenChain<T2, E2 = never>(
+    cb1: (arg: T, history: []) => ResultPromisable<T2, E2>
+  ): AsyncResult<T2, E | E2>;
+  thenChain<T2, T3, E2 = never, E3 = never>(
+    cb1: (arg: T, history: []) => ResultPromisable<T2, E2>,
+    cb2: (arg: T2, history: [T]) => ResultPromisable<T3, E3>
+  ): AsyncResult<T3, E | E2 | E3>;
+  thenChain<T2, T3, T4, E2 = never, E3 = never, E4 = never>(
+    cb1: (arg: T, history: []) => ResultPromisable<T2, E2>,
+    cb2: (arg: T2, history: [T]) => ResultPromisable<T3, E3>,
+    cb3: (arg: T3, history: [T, T2]) => ResultPromisable<T4, E4>
+  ): AsyncResult<T4, E | E2 | E3 | E4>;
+  thenChain<T2, T3, T4, T5, E2 = never, E3 = never, E4 = never, E5 = never>(
+    cb1: (arg: T, history: []) => ResultPromisable<T2, E2>,
+    cb2: (arg: T2, history: [T]) => ResultPromisable<T3, E3>,
+    cb3: (arg: T3, history: [T, T2]) => ResultPromisable<T4, E4>,
+    cb4: (arg: T4, history: [T, T2, T3]) => ResultPromisable<T5, E5>
+  ): AsyncResult<T5, E | E2 | E3 | E4 | E5>;
+  thenChain<
+    T2,
+    T3,
+    T4,
+    T5,
+    T6,
+    E2 = never,
+    E3 = never,
+    E4 = never,
+    E5 = never,
+    E6 = never
+  >(
+    cb1: (arg: T, history: []) => ResultPromisable<T2, E2>,
+    cb2: (arg: T2, history: [T]) => ResultPromisable<T3, E3>,
+    cb3: (arg: T3, history: [T, T2]) => ResultPromisable<T4, E4>,
+    cb4: (arg: T4, history: [T, T2, T3]) => ResultPromisable<T5, E5>,
+    cb5: (arg: T5, history: [T, T2, T3, T4]) => ResultPromisable<T6, E6>
+  ): AsyncResult<T6, E | E2 | E3 | E4 | E5 | E6>;
+  thenChain<
+    T2,
+    T3,
+    T4,
+    T5,
+    T6,
+    T7,
+    E2 = never,
+    E3 = never,
+    E4 = never,
+    E5 = never,
+    E6 = never,
+    E7 = never
+  >(
+    cb1: (arg: T, history: []) => ResultPromisable<T2, E2>,
+    cb2: (arg: T2, history: [T]) => ResultPromisable<T3, E3>,
+    cb3: (arg: T3, history: [T, T2]) => ResultPromisable<T4, E4>,
+    cb4: (arg: T4, history: [T, T2, T3]) => ResultPromisable<T5, E5>,
+    cb5: (arg: T5, history: [T, T2, T3, T4]) => ResultPromisable<T6, E6>,
+    cb6: (arg: T6, history: [T, T2, T3, T4, T5]) => ResultPromisable<T7, E7>
+  ): AsyncResult<T7, E | E2 | E3 | E4 | E5 | E6 | E7>;
+  thenChain<
+    T2,
+    T3,
+    T4,
+    T5,
+    T6,
+    T7,
+    T8,
+    E2 = never,
+    E3 = never,
+    E4 = never,
+    E5 = never,
+    E6 = never,
+    E7 = never,
+    E8 = never
+  >(
+    cb1: (arg: T, history: []) => ResultPromisable<T2, E2>,
+    cb2: (arg: T2, history: [T]) => ResultPromisable<T3, E3>,
+    cb3: (arg: T3, history: [T, T2]) => ResultPromisable<T4, E4>,
+    cb4: (arg: T4, history: [T, T2, T3]) => ResultPromisable<T5, E5>,
+    cb5: (arg: T5, history: [T, T2, T3, T4]) => ResultPromisable<T6, E6>,
+    cb6: (arg: T6, history: [T, T2, T3, T4, T5]) => ResultPromisable<T7, E7>,
+    cb7: (arg: T7, history: [T, T2, T3, T4, T5, T6]) => ResultPromisable<T8, E8>
+  ): AsyncResult<T8, E | E2 | E3 | E4 | E5 | E6 | E7 | E8>;
+  thenChain<
+    T2,
+    T3,
+    T4,
+    T5,
+    T6,
+    T7,
+    T8,
+    T9,
+    E2 = never,
+    E3 = never,
+    E4 = never,
+    E5 = never,
+    E6 = never,
+    E7 = never,
+    E8 = never,
+    E9 = never
+  >(
+    cb1: (arg: T, history: []) => ResultPromisable<T2, E2>,
+    cb2: (arg: T2, history: [T]) => ResultPromisable<T3, E3>,
+    cb3: (arg: T3, history: [T, T2]) => ResultPromisable<T4, E4>,
+    cb4: (arg: T4, history: [T, T2, T3]) => ResultPromisable<T5, E5>,
+    cb5: (arg: T5, history: [T, T2, T3, T4]) => ResultPromisable<T6, E6>,
+    cb6: (arg: T6, history: [T, T2, T3, T4, T5]) => ResultPromisable<T7, E7>,
+    cb7: (
+      arg: T7,
+      history: [T, T2, T3, T4, T5, T6]
+    ) => ResultPromisable<T8, E8>,
+    cb8: (
+      arg: T8,
+      history: [T, T2, T3, T4, T5, T6, T7]
+    ) => ResultPromisable<T9, E9>
+  ): AsyncResult<T9, E | E2 | E3 | E4 | E5 | E6 | E7 | E8 | E9>;
+  thenChain(
+    ...cbs: ((arg: any, history: any) => ResultPromisable<any, any>)[]
+  ): AsyncResult<any, any> {
+    const history: any[] = [];
+    return cbs.reduce((acc: AsyncResult<any, any>, cb) => {
+      return acc.then_(async (arg: any) => {
+        const currentHistory = [...history];
+        history.push(arg);
+        return cb(arg, currentHistory);
+      });
+    }, this);
+  }
 }
 
 export function AsyncResult<T, E = never>(
