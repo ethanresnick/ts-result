@@ -207,7 +207,7 @@ describe("AsyncResult", () => {
   });
 
   describe("catch_", () => {
-    it("if the result is Ok, should return the existing Result as-is and not call callback", async () => {
+    it("if the result is Ok, should return (a copy of) the existing Result as-is and not call callback", async () => {
       const result = AsyncResult(Promise.resolve(Ok(42)));
       const cb = mock.fn((error) => error.error);
       const mappedResult = result.catch_(cb);
@@ -217,16 +217,17 @@ describe("AsyncResult", () => {
 
     it("if the result is Err, should follow promise catch() and produce an Ok() from the return value", async () => {
       const error = new Error("Something went wrong");
+      const error2 = new Error("Something went wrong 2");
 
       // even though this return value was an Error object, it becomes an Ok
       const mappedResult1 = AsyncResult(Promise.resolve(Err(error))).catch_(
-        (error) => error
+        (_) => error2
       );
       const mappedResult2 = AsyncResult(Promise.resolve(Err(error))).catch_(
         (_error) => 42
       );
 
-      assert.deepEqual(await mappedResult1.valueOrReject(), error);
+      assert.deepEqual(await mappedResult1.valueOrReject(), error2);
       assert.deepEqual(await mappedResult2.valueOrReject(), 42);
     });
 
@@ -241,34 +242,25 @@ describe("AsyncResult", () => {
         (_error) => Ok(42)
       );
 
-      assert.deepEqual(
-        await mappedResult.valueOrReject().then(
-          () => {
-            throw new Error("should've rejected!");
-          },
-          (e) => e
-        ),
-        error2
-      );
+      assert.rejects(async () => await mappedResult.valueOrReject(), error2);
       assert.deepEqual(await mappedResult2.valueOrReject(), 42);
     });
 
     it("should create a rejected AsyncResult if the callback throws an error", async () => {
       const error = new Error("Something went wrong");
       const error2 = new Error("Something went wrong 2");
-      const mappedResult = AsyncResult(Promise.resolve(Err(error))).catch_(
-        (_error) => {
-          throw error2;
-        }
-      );
 
-      const fallbackCb = mock.fn((_errorHolder) => "fallback value");
-      await mappedResult.valueOrFallback(() => {}, fallbackCb);
-      assert.strictEqual(fallbackCb.mock.callCount(), 1);
-      assert.deepStrictEqual(fallbackCb.mock.calls[0]?.arguments[0], error2);
+      try {
+        await AsyncResult(Promise.resolve(Err(error))).catch_((_error) => {
+          throw error2;
+        });
+        throw new Error("should not have gotten here");
+      } catch (e) {
+        assert.strictEqual(e, error2);
+      }
     });
 
-    it("should pass the callback the correct ErrorHolder", async () => {
+    it("should pass the err and rejection callbacks the correct error", async () => {
       const error = new Error("Something went wrong");
       const error2 = new Error("Something went wrong 2");
       const unusedCb = (_err: unknown) => {
@@ -276,12 +268,9 @@ describe("AsyncResult", () => {
       };
 
       const mappedResult = AsyncResult(Promise.resolve(Err(error))).catch_(
-        (error_) => {
-          assert.deepStrictEqual(error_, error);
-          return error;
-        }
+        (error_) => assert.deepStrictEqual(error_, error) ?? true
       );
-      assert.deepEqual(await mappedResult.valueOrReject(), error);
+      assert.deepEqual(await mappedResult.valueOrReject(), true);
 
       const mappedResult2 = AsyncResult(Promise.resolve(Err(error)))
         .catch_((_e) => {
@@ -293,18 +282,6 @@ describe("AsyncResult", () => {
         });
 
       assert.deepEqual(await mappedResult2.valueOrReject(), error2);
-    });
-  });
-
-  describe("catch_", () => {
-    it("if the result is Ok, should return (a copy of) the existing Result as-is and not call callback", async () => {
-      const result = AsyncResult(Promise.resolve(Ok(42)));
-      const cb = mock.fn((error) => error.error);
-
-      const mappedResult = result.catch_(cb);
-
-      assert.deepEqual(await mappedResult.valueOrReject(), 42);
-      assert.strictEqual(cb.mock.callCount(), 0);
     });
 
     it("if the result is a rejected, should return a copy of the existing Result as-is and not call callback", async () => {
@@ -325,55 +302,6 @@ describe("AsyncResult", () => {
       // which valueOrFallback(), is called on, is an unchecked Err Result.
       assert.strictEqual(fallbackCb.mock.callCount(), 1);
       assert.deepStrictEqual(fallbackCb.mock.calls[0]?.arguments[0], error);
-    });
-
-    it("if the result is a known Err, should follow promise catch() and produce an Ok() from the return value", async () => {
-      const error = new Error("Something went wrong");
-      const cb = mock.fn((error) => error);
-
-      // even though this return value was an Error object, it becomes an Ok
-      const mappedResult1 = AsyncResult(Promise.resolve(Err(error))).catch_(cb);
-      const mappedResult2 = AsyncResult(Promise.resolve(Err(error))).catch_(
-        (_error) => 42
-      );
-
-      assert.deepEqual(await mappedResult1.valueOrReject(), error);
-      assert.deepEqual(await mappedResult2.valueOrReject(), 42);
-
-      assert.strictEqual(cb.mock.callCount(), 1);
-      assert.deepStrictEqual(cb.mock.calls[0]?.arguments[0], error);
-    });
-
-    it("if the result is a known Err, should work as chain() and return a new Result with the returned value", async () => {
-      const error = new Error("Something went wrong");
-      const error2 = new Error("Something went wrong 2");
-
-      const mappedResult = AsyncResult(Promise.resolve(Err(error))).catch_(
-        (_error) => Err(error2)
-      );
-      const mappedResult2 = AsyncResult(Promise.resolve(Err(error))).catch_(
-        (_error) => Ok(42)
-      );
-
-      assert.rejects(async () => await mappedResult.valueOrReject(), error2);
-      assert.deepEqual(
-        await mappedResult2.valueOrFallback((_) => undefined),
-        42
-      );
-    });
-
-    it("should create a rejected AsyncResult if the callback throws an error", async () => {
-      const error = new Error("Something went wrong");
-      const error2 = new Error("Something went wrong 2");
-
-      try {
-        await AsyncResult(Promise.resolve(Err(error))).catch_((_error) => {
-          throw error2;
-        });
-        throw new Error("should not have gotten here");
-      } catch (e) {
-        assert.strictEqual(e, error2);
-      }
     });
   });
 
@@ -766,5 +694,136 @@ describe("AsyncResult", () => {
       assert.strictEqual(finallyRan3, true);
       assert.strictEqual(finallyRan4, true);
     });
+  });
+});
+
+describe("AsyncResult.prototype.thenChain", () => {
+  it("should call a single callback with the value and empty history", async () => {
+    const cb = mock.fn(async (x: number, history: []) => x + 1);
+    const result = AsyncResult(1).thenChain(cb);
+    assert.deepStrictEqual(await result.valueOrReject(), 2);
+    assert.strictEqual(cb.mock.callCount(), 1);
+    assert.deepStrictEqual(cb.mock.calls[0]?.arguments, [1, []]);
+  });
+
+  it("should chain two callbacks, passing correct history", async () => {
+    const cb1 = mock.fn(async (x: number, history: []) => x + 1);
+    const cb2 = mock.fn(async (x: number, history: [number]) => x * 2);
+    const result = AsyncResult(1).thenChain(cb1, cb2);
+    assert.deepStrictEqual(await result.valueOrReject(), 4);
+    assert.strictEqual(cb1.mock.callCount(), 1);
+    assert.strictEqual(cb2.mock.callCount(), 1);
+    assert.deepStrictEqual(cb1.mock.calls[0]?.arguments, [1, []]);
+    assert.deepStrictEqual(cb2.mock.calls[0]?.arguments, [2, [1]]);
+  });
+
+  it("should chain three callbacks, passing correct history", async () => {
+    const cb1 = mock.fn(async (x: number, history: []) => x + 1);
+    const cb2 = mock.fn(async (x: number, history: [number]) => x * 2);
+    const cb3 = mock.fn(async (x: number, history: [number, number]) =>
+      Ok(x - 3)
+    );
+    const result = AsyncResult(1).thenChain(cb1, cb2, cb3);
+    assert.deepStrictEqual(await result.valueOrReject(), 1);
+    assert.strictEqual(cb1.mock.callCount(), 1);
+    assert.strictEqual(cb2.mock.callCount(), 1);
+    assert.strictEqual(cb3.mock.callCount(), 1);
+    assert.deepStrictEqual(cb1.mock.calls[0]?.arguments, [1, []]);
+    assert.deepStrictEqual(cb2.mock.calls[0]?.arguments, [2, [1]]);
+    assert.deepStrictEqual(cb3.mock.calls[0]?.arguments, [4, [1, 2]]);
+  });
+
+  it("should short-circuit on Err and not call further callbacks", async () => {
+    const err = new Error("fail");
+    const cb1 = mock.fn(async (x: number, history: []) => x + 1);
+    const cb2 = mock.fn(async (_x: number, _history: [number]) => Err(err));
+    const cb3 = mock.fn(async (x: number, history: [number, number]) => x * 2);
+    const result = AsyncResult(1).thenChain(cb1, cb2, cb3);
+    await result.valueOrReject().then(
+      () => {
+        throw new Error("should've rejected");
+      },
+      (e) => {
+        assert.deepStrictEqual(e, err);
+      }
+    );
+    assert.strictEqual(cb1.mock.callCount(), 1);
+    assert.strictEqual(cb2.mock.callCount(), 1);
+    assert.strictEqual(cb3.mock.callCount(), 0);
+  });
+
+  it("should work if a callback returns a non-Result value (wraps in Ok)", async () => {
+    const cb1 = async (x: number, _history: []) => x + 1;
+    const cb2 = async (x: number, _history: [number]) => x * 2;
+    const result = AsyncResult(1).thenChain(cb1, cb2);
+    assert.deepStrictEqual(await result.valueOrReject(), 4);
+  });
+
+  it("should work if a callback returns an AsyncResult", async () => {
+    const cb1 = async (x: number, _history: []) => AsyncResult(x + 1);
+    const cb2 = async (x: number, _history: [number]) => AsyncResult(x * 2);
+    const result = AsyncResult(1).thenChain(cb1, cb2);
+    assert.deepStrictEqual(await result.valueOrReject(), 4);
+  });
+
+  it("should work if a callback throws (propagates the error)", async () => {
+    const err = new Error("fail");
+    const cb1 = async (_x: number, _history: []) => {
+      throw err;
+    };
+    const result = AsyncResult(1).thenChain(cb1);
+    await assert.rejects(() => result.valueOrReject(), err);
+  });
+
+  it("should work with no callbacks (returns original result)", async () => {
+    // @ts-expect-error
+    const result = AsyncResult(1).thenChain();
+    assert.deepStrictEqual(await result.valueOrReject(), 1);
+  });
+
+  it("should work with more than three callbacks and correct history", async () => {
+    const cb1 = async (x: number, history: []) => x + 1;
+    const cb2 = async (x: number, history: [number]) => x * 2;
+    const cb3 = async (x: number, history: [number, number]) => x - 3;
+    const cb4 = async (x: number, history: [number, number, number]) => x * 10;
+    const cb5 = async (x: number, history: [number, number, number, number]) =>
+      x / 2;
+
+    const result = AsyncResult(1).thenChain(cb1, cb2, cb3, cb4, cb5);
+    // 1 -> cb1: 2, cb2: 4, cb3: 1, cb4: 10, cb5: 5
+    assert.deepStrictEqual(await result.valueOrReject(), 5);
+  });
+
+  it("should propagate Err if the initial result is Err", async () => {
+    const err = new Error("fail");
+    const cb1 = mock.fn(async (x: number, history: []) => x + 1);
+    const result = AsyncResult(Err(err)).thenChain(cb1);
+    await result.valueOrReject().then(
+      () => {
+        throw new Error("should've rejected");
+      },
+      (e) => {
+        assert.deepStrictEqual(e, err);
+      }
+    );
+    assert.strictEqual(cb1.mock.callCount(), 0);
+  });
+
+  it("should pass correct history for each callback", async () => {
+    const historySnapshots: any[] = [];
+    const cb1 = async (x: number, history: []) => {
+      historySnapshots.push([...history]);
+      return x + 1;
+    };
+    const cb2 = async (x: number, history: [number]) => {
+      historySnapshots.push([...history]);
+      return x * 2;
+    };
+    const cb3 = async (x: number, history: [number, number]) => {
+      historySnapshots.push([...history]);
+      return x - 3;
+    };
+    await AsyncResult(1).thenChain(cb1, cb2, cb3);
+    assert.deepStrictEqual(historySnapshots, [[], [1], [1, 2]]);
   });
 });

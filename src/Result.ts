@@ -107,6 +107,98 @@ export class _Result<T, E> {
       : toResult(this satisfies Result<T, E> as unknown as Result<T2, E>);
   }
 
+  thenChain<T2, E2 = never>(
+    cb1: (arg: T, history: []) => T2 | Result<T2, E2>
+  ): Result<T2, E | E2>;
+  thenChain<T2, T3, E2 = never, E3 = never>(
+    cb1: (arg: T, history: []) => T2 | Result<T2, E2>,
+    cb2: (arg: T2, history: [T]) => T3 | Result<T3, E3>
+  ): Result<T3, E | E2 | E3>;
+  thenChain<T2, T3, T4, E2 = never, E3 = never, E4 = never>(
+    cb1: (arg: T, history: []) => T2 | Result<T2, E2>,
+    cb2: (arg: T2, history: [T]) => T3 | Result<T3, E3>,
+    cb3: (arg: T3, history: [T, T2]) => T4 | Result<T4, E4>
+  ): Result<T4, E | E2 | E3 | E4>;
+  thenChain<T2, T3, T4, T5, E2 = never, E3 = never, E4 = never, E5 = never>(
+    cb1: (arg: T, history: []) => T2 | Result<T2, E2>,
+    cb2: (arg: T2, history: [T]) => T3 | Result<T3, E3>,
+    cb3: (arg: T3, history: [T, T2]) => T4 | Result<T4, E4>,
+    cb4: (arg: T4, history: [T, T2, T3]) => T5 | Result<T5, E5>
+  ): Result<T5, E | E2 | E3 | E4 | E5>;
+  thenChain<
+    T2,
+    T3,
+    T4,
+    T5,
+    T6,
+    E2 = never,
+    E3 = never,
+    E4 = never,
+    E5 = never,
+    E6 = never
+  >(
+    cb1: (arg: T, history: []) => T2 | Result<T2, E2>,
+    cb2: (arg: T2, history: [T]) => T3 | Result<T3, E3>,
+    cb3: (arg: T3, history: [T, T2]) => T4 | Result<T4, E4>,
+    cb4: (arg: T4, history: [T, T2, T3]) => T5 | Result<T5, E5>,
+    cb5: (arg: T5, history: [T, T2, T3, T4]) => T6 | Result<T6, E6>
+  ): Result<T6, E | E2 | E3 | E4 | E5 | E6>;
+  thenChain<
+    T2,
+    T3,
+    T4,
+    T5,
+    T6,
+    T7,
+    E2 = never,
+    E3 = never,
+    E4 = never,
+    E5 = never,
+    E6 = never,
+    E7 = never
+  >(
+    cb1: (arg: T, history: []) => T2 | Result<T2, E2>,
+    cb2: (arg: T2, history: [T]) => T3 | Result<T3, E3>,
+    cb3: (arg: T3, history: [T, T2]) => T4 | Result<T4, E4>,
+    cb4: (arg: T4, history: [T, T2, T3]) => T5 | Result<T5, E5>,
+    cb5: (arg: T5, history: [T, T2, T3, T4]) => T6 | Result<T6, E6>,
+    cb6: (arg: T6, history: [T, T2, T3, T4, T5]) => T7 | Result<T7, E7>
+  ): Result<T7, E | E2 | E3 | E4 | E5 | E6 | E7>;
+  thenChain<
+    T2,
+    T3,
+    T4,
+    T5,
+    T6,
+    T7,
+    T8,
+    E2 = never,
+    E3 = never,
+    E4 = never,
+    E5 = never,
+    E6 = never,
+    E7 = never,
+    E8 = never
+  >(
+    cb1: (arg: T, history: []) => T2 | Result<T2, E2>,
+    cb2: (arg: T2, history: [T]) => T3 | Result<T3, E3>,
+    cb3: (arg: T3, history: [T, T2]) => T4 | Result<T4, E4>,
+    cb4: (arg: T4, history: [T, T2, T3]) => T5 | Result<T5, E5>,
+    cb5: (arg: T5, history: [T, T2, T3, T4]) => T6 | Result<T6, E6>,
+    cb6: (arg: T6, history: [T, T2, T3, T4, T5]) => T7 | Result<T7, E7>,
+    cb7: (arg: T7, history: [T, T2, T3, T4, T5, T6]) => T8 | Result<T8, E8>
+  ): Result<T8, E | E2 | E3 | E4 | E5 | E6 | E7 | E8>;
+  thenChain(...cbs: ((arg: any, history: any) => any)[]): Result<any, any> {
+    const history: any[] = [];
+    return cbs.reduce<Result<any, any>>((result, cb) => {
+      return result.then_((arg) => {
+        const currentHistory = [...history];
+        history.push(arg);
+        return cb(arg, currentHistory);
+      });
+    }, this);
+  }
+
   /**
    * Analogous to Promise.prototype.catch(), this supports "recovering" from an
    * error, or transforming it into a new error, by taking the error value in

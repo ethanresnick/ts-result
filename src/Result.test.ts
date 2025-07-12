@@ -387,3 +387,101 @@ describe("Result", () => {
     });
   });
 });
+
+describe("thenChain", () => {
+  it("should call a single callback with the value and empty history", () => {
+    const cb = mock.fn((x: number, history: []) => x + 1);
+    const result = Ok(1).thenChain(cb);
+    assert.deepStrictEqual(result, Ok(2));
+    assert.strictEqual(cb.mock.callCount(), 1);
+    assert.deepStrictEqual(cb.mock.calls[0]?.arguments, [1, []]);
+  });
+
+  it("should chain two callbacks, passing correct history", () => {
+    const cb1 = mock.fn((x: number, history: []) => x + 1);
+    const cb2 = mock.fn((x: number, history: [number]) => x * 2);
+    const result = Ok(1).thenChain(cb1, cb2);
+    assert.deepStrictEqual(result, Ok(4));
+    assert.strictEqual(cb1.mock.callCount(), 1);
+    assert.strictEqual(cb2.mock.callCount(), 1);
+    assert.deepStrictEqual(cb1.mock.calls[0]?.arguments, [1, []]);
+    assert.deepStrictEqual(cb2.mock.calls[0]?.arguments, [2, [1]]);
+  });
+
+  it("should chain three callbacks, passing correct history", () => {
+    const cb1 = mock.fn((x: number, history: []) => x + 1);
+    const cb2 = mock.fn((x: number, history: [number]) => x * 2);
+    const cb3 = mock.fn((x: number, history: [number, number]) => Ok(x - 3));
+    const result = Ok(1).thenChain(cb1, cb2, cb3);
+    assert.deepStrictEqual(result, Ok(1));
+    assert.strictEqual(cb1.mock.callCount(), 1);
+    assert.strictEqual(cb2.mock.callCount(), 1);
+    assert.strictEqual(cb3.mock.callCount(), 1);
+    assert.deepStrictEqual(cb1.mock.calls[0]?.arguments, [1, []]);
+    assert.deepStrictEqual(cb2.mock.calls[0]?.arguments, [2, [1]]);
+    assert.deepStrictEqual(cb3.mock.calls[0]?.arguments, [4, [1, 2]]);
+  });
+
+  it("should short-circuit on Err and not call further callbacks", () => {
+    const err = new Error("fail");
+    const cb1 = mock.fn((x: number, history: []) => x + 1);
+    const cb2 = mock.fn((_x: number, _history: [number]) => Err(err));
+    const cb3 = mock.fn((x: number, history: [number, number]) => x * 2);
+    const result = Ok(1).thenChain(cb1, cb2, cb3);
+    assert.deepStrictEqual(result, Err(err));
+    assert.strictEqual(cb1.mock.callCount(), 1);
+    assert.strictEqual(cb2.mock.callCount(), 1);
+    assert.strictEqual(cb3.mock.callCount(), 0);
+  });
+
+  it("should work if a callback throws (propagates the error)", () => {
+    const err = new Error("fail");
+    const cb1 = (_x: number, _history: []) => {
+      throw err;
+    };
+    assert.throws(() => Ok(1).thenChain(cb1), err);
+  });
+
+  it("should work with no callbacks (returns original result)", () => {
+    // @ts-expect-error
+    const result = Ok(1).thenChain();
+    assert.deepStrictEqual(result, Ok(1));
+  });
+
+  it("should work with more than three callbacks and correct history", () => {
+    const cb1 = (x: number, history: []) => x + 1;
+    const cb2 = (x: number, history: [number]) => x * 2;
+    const cb3 = (x: number, history: [number, number]) => x - 3;
+    const cb4 = (x: number, history: [number, number, number]) => x * 10;
+    const cb5 = (x: number, history: [number, number, number, number]) => x / 2;
+    const result = Ok(1).thenChain(cb1, cb2, cb3, cb4, cb5);
+    // 1 -> cb1: 2, cb2: 4, cb3: 1, cb4: 10, cb5: 5
+    assert.deepStrictEqual(result, Ok(5));
+  });
+
+  it("should propagate Err if the initial result is Err", () => {
+    const err = new Error("fail");
+    const cb1 = mock.fn((x: number, history: []) => x + 1);
+    const result = Err(err).thenChain(cb1);
+    assert.deepStrictEqual(result, Err(err));
+    assert.strictEqual(cb1.mock.callCount(), 0);
+  });
+
+  it("should pass correct history for each callback", () => {
+    const historySnapshots: any[] = [];
+    const cb1 = (x: number, history: []) => {
+      historySnapshots.push([...history]);
+      return x + 1;
+    };
+    const cb2 = (x: number, history: [number]) => {
+      historySnapshots.push([...history]);
+      return x * 2;
+    };
+    const cb3 = (x: number, history: [number, number]) => {
+      historySnapshots.push([...history]);
+      return x - 3;
+    };
+    Ok(1).thenChain(cb1, cb2, cb3);
+    assert.deepStrictEqual(historySnapshots, [[], [1], [1, 2]]);
+  });
+});
