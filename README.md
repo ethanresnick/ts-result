@@ -8,3 +8,4 @@ Read about [the motivation and gory design details](https://medium.com/@ethanres
 
 ```sh
 npm install ts-async
+```
